@@ -6,15 +6,23 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Lenny Growth Assistant",
-  description: "AI assistant grounded in Lenny's Podcast transcripts — product, growth, and strategy insights on demand.",
-  keywords: ["product management", "growth", "Lenny's Podcast", "AI assistant"],
+  description: "AI growth advisor trained on Lenny's Podcast",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${GeistSans.variable} ${GeistMono.variable}`}>
-      <body>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange={false}>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${GeistSans.variable} ${GeistMono.variable} font-sans antialiased`}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
           {children}
         </ThemeProvider>
       </body>

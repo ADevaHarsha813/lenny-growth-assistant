@@ -1,39 +1,37 @@
+"""Pydantic v2 request/response schemas."""
 from pydantic import BaseModel, Field
-from typing import Optional, Literal, Any
+from typing import Optional, Literal
 from datetime import datetime
-from uuid import UUID
+import uuid
 
-
-# ─── Session ─────────────────────────────────────────────────────────────────
 
 class SessionCreate(BaseModel):
-    title: Optional[str] = None
-    llm_provider: Literal["anthropic", "ollama"] = "ollama"
+    title: Optional[str] = "New conversation"
+    llm_provider: Optional[str] = "ollama"
+    llm_model: Optional[str] = "llama3.1:8b"
 
 
 class SessionResponse(BaseModel):
-    id: UUID
-    title: Optional[str]
+    id: uuid.UUID
+    title: str
     created_at: datetime
     updated_at: datetime
-    llm_provider: str
+    llm_provider: Optional[str]
     llm_model: Optional[str]
-    message_count: int = 0
 
     model_config = {"from_attributes": True}
 
 
-# ─── Message ──────────────────────────────────────────────────────────────────
-
 class Source(BaseModel):
-    title: str
-    excerpt: str
-    chunk_index: Optional[int] = None
+    episode_title: str
+    source_file: str
+    chunk_index: int
+    distance: Optional[float] = None
 
 
 class MessageResponse(BaseModel):
-    id: UUID
-    session_id: UUID
+    id: uuid.UUID
+    session_id: uuid.UUID
     role: str
     content: str
     sources: Optional[list[Source]] = None
@@ -42,29 +40,21 @@ class MessageResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ─── Chat ─────────────────────────────────────────────────────────────────────
-
 class ChatRequest(BaseModel):
-    session_id: UUID
-    message: str = Field(..., min_length=1, max_length=4000)
+    message: str = Field(..., min_length=1, max_length=8000)
     skill: Optional[Literal["ship30", "artifact_markdown", "artifact_html"]] = None
 
 
-# ─── Artifact ─────────────────────────────────────────────────────────────────
-
 class ArtifactResponse(BaseModel):
-    id: UUID
-    session_id: UUID
+    id: uuid.UUID
+    session_id: uuid.UUID
     artifact_type: str
-    title: Optional[str]
+    title: str
     content: str
     created_at: datetime
-    sources: Optional[list[Source]] = None
 
     model_config = {"from_attributes": True}
 
-
-# ─── Health ───────────────────────────────────────────────────────────────────
 
 class HealthResponse(BaseModel):
     status: str
@@ -73,11 +63,9 @@ class HealthResponse(BaseModel):
     llm_model: str
     database: str
     vector_store: str
+    version: str = "1.0.0"
 
-
-# ─── Error ────────────────────────────────────────────────────────────────────
 
 class ErrorResponse(BaseModel):
     error: str
-    detail: Optional[Any] = None
-    code: Optional[str] = None
+    detail: Optional[str] = None

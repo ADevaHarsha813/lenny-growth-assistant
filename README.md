@@ -1,56 +1,119 @@
-# 🌱 The Lenny Growth Assistant
+# 🐢 Lenny Growth Assistant
 
-> AI-powered conversational assistant grounded in Lenny's Podcast transcripts. Ask product and growth questions, generate Ship 30 for 30 essays, and create rendered Markdown/HTML artifacts — all from a single clean interface.
+> An AI-powered growth advisor trained on hundreds of episodes from [Lenny's Podcast](https://www.lennyspodcast.com/).
 
-## Quick Start
+Built as a take-home assignment for Oogway Labs — Forward Deployed Engineer role.
+
+## ✨ Features
+
+- **RAG-powered chat** — answers product/growth questions using real transcript insights
+- **Dual LLM** — Anthropic Claude 3.5 Haiku (cloud) or Ollama llama3.1:8b (local)
+- **Agentic tool loop** — search_transcripts, generate_ship30_essay, generate_artifact
+- **Ship 30 for 30 essays** — ~1,250-word atomic essays with podcast evidence
+- **Artifact generation** — Markdown docs and interactive HTML with split-pane preview
+- **SSE streaming** — real-time response streaming
+- **Persistent sessions** — Supabase (PostgreSQL) via SQLAlchemy async
+- **Light/dark mode** — system-aware with manual toggle
+
+## 🏗️ Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend | FastAPI 0.115, Python 3.11 |
+| LLM | Anthropic Claude 3.5 Haiku / Ollama llama3.1:8b |
+| Embeddings | nomic-embed-text via Ollama |
+| Vector Store | ChromaDB (persistent) |
+| Database | Supabase (PostgreSQL) + SQLAlchemy async |
+| Frontend | Next.js 14 (App Router) + TypeScript |
+| Styling | Tailwind CSS + custom design tokens |
+| Font | Geist (400 + 600) |
+| Streaming | Server-Sent Events (SSE) |
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Docker Desktop
+- Ollama with `llama3.1:8b` and `nomic-embed-text` models
+- Supabase project (for database)
+
+### 1. Clone and configure
 
 ```bash
-# 1. Clone
-git clone https://github.com/ADevaHarsha813/lenny-growth-assistant
+git clone https://github.com/ADevaHarsha813/lenny-growth-assistant.git
 cd lenny-growth-assistant
-
-# 2. Set up environment
 cp .env.example .env
-# Edit .env — add your DATABASE_URL and LLM config
-
-# 3. Start Ollama (required for local demo)
-ollama pull llama3.1:8b
-ollama pull nomic-embed-text
-
-# 4. Run (requires Docker Desktop)
-docker compose up --build
-
-# 5. Open
-# Frontend: http://localhost:3000
-# API docs: http://localhost:8000/docs
-# Health:   http://localhost:8000/health
+# Edit .env with your DATABASE_URL and optionally ANTHROPIC_API_KEY
 ```
 
-## Architecture
+### 2. Ingest transcripts
 
-- **Frontend:** Next.js 14 (App Router) + Tailwind CSS + shadcn/ui
-- **Backend:** FastAPI (Python 3.11) + SQLAlchemy async
-- **Database:** Supabase (PostgreSQL)
-- **Vector Store:** ChromaDB (in-process)
-- **LLM:** Anthropic Claude (cloud) or Ollama (local)
-- **Agent:** Anthropic `tool_use` agentic loop (3 tools)
+```bash
+git clone https://github.com/ChatPRD/lennys-podcast-transcripts data/transcripts
+docker compose up backend --build -d
+docker compose exec backend python scripts/ingest_transcripts.py
+```
 
-See [docs/architecture.md](docs/architecture.md) for full details.
+### 3. Start the app
 
-## Environment Variables
+```bash
+docker compose up --build
+```
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `LLM_PROVIDER` | Yes | `anthropic` or `ollama` |
-| `ANTHROPIC_API_KEY` | If cloud | Your Anthropic API key |
-| `OLLAMA_MODEL` | If local | Default: `llama3.1:8b` |
-| `DATABASE_URL` | Yes | Supabase PostgreSQL connection string |
+Open [http://localhost:3000](http://localhost:3000)
 
-See [.env.example](.env.example) for all variables.
+## 🔑 Environment Variables
 
-## Documentation
+| Variable | Description |
+|----------|-------------|
+| `LLM_PROVIDER` | `ollama` or `anthropic` |
+| `ANTHROPIC_API_KEY` | Claude API key (if using Anthropic) |
+| `OLLAMA_BASE_URL` | Ollama endpoint (default: `http://host.docker.internal:11434`) |
+| `OLLAMA_MODEL` | Chat model (default: `llama3.1:8b`) |
+| `OLLAMA_EMBED_MODEL` | Embedding model (default: `nomic-embed-text`) |
+| `DATABASE_URL` | Supabase PostgreSQL connection string |
+| `CHROMA_PERSIST_DIR` | ChromaDB storage path |
 
-- [PRD](docs/PRD.md) — Product requirements and discovery brief
-- [Architecture](docs/architecture.md) — System design and API reference
-- [Design](docs/design.md) — UI/UX decisions and interaction model
-- [Agent Transcripts](agent-transcripts/) — AI-assisted coding session logs
+## 📁 Project Structure
+
+```
+lenny-growth-assistant/
+├── backend/
+│   ├── app/
+│   │   ├── agents/          # orchestrator + tools + LLM provider
+│   │   ├── api/             # FastAPI routes (sessions, chat, artifacts)
+│   │   ├── models/          # SQLAlchemy ORM + Pydantic schemas
+│   │   ├── rag/             # ChromaDB chunker + retriever + ingest
+│   │   └── skills/          # ship30 + artifact_gen
+│   └── scripts/ingest_transcripts.py
+├── frontend/
+│   ├── app/                 # Next.js App Router pages
+│   ├── components/          # React UI components
+│   ├── hooks/               # useChat, useSession
+│   └── lib/                 # types, api client
+├── docker-compose.yml
+└── .env.example
+```
+
+## 🎯 Architecture
+
+```
+User → Next.js → FastAPI → Agentic Loop
+                              ↓
+                    ┌─────────────────┐
+                    │  Tool Dispatch  │
+                    ├────────┬────────┤
+                    │ Search │ Essay  │ HTML/MD
+                    │  RAG   │Ship30  │Artifact
+                    └────┬───┴────────┘
+                         ↓
+                    ChromaDB (vectors)
+                    Supabase (messages)
+```
+
+## 📺 Demo
+
+[Demo Video](https://youtube.com/...)
+
+---
+
+Built with ❤️ by Deva Harsha Annamreddy for Oogway Labs

@@ -1,112 +1,156 @@
-"""
-Tool definitions for the agentic loop.
-Three tools: search_transcripts, generate_ship30_essay, generate_artifact.
-"""
-from app.rag.retriever import search
+"""Tool definitions and dispatch for the agentic loop."""
+import json
+from app.rag.retriever import get_retriever
 
-TOOLS = [
+ANTHROPIC_TOOLS = [
     {
         "name": "search_transcripts",
-        "description": (
-            "Search Lenny's Podcast transcripts for relevant content. "
-            "Use this to ground answers in actual transcript material. "
-            "Returns the most relevant chunks with their source episode."
-        ),
+        "description": "Search Lenny's Podcast transcripts for relevant insights, frameworks, and advice. Use this for any product, growth, or strategy question.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The search query, e.g. 'how to find product-market fit'",
-                }
+                    "description": "The search query to find relevant podcast content",
+                },
+                "n_results": {
+                    "type": "integer",
+                    "description": "Number of results to return (default: 5)",
+                    "default": 5,
+                },
             },
             "required": ["query"],
         },
     },
     {
         "name": "generate_ship30_essay",
-        "description": (
-            "Generate a Ship 30 for 30 style essay (~1250 words) on a topic, "
-            "grounded in Lenny's transcript content. "
-            "Use AFTER searching transcripts to have source material."
-        ),
+        "description": "Generate a Ship 30 for 30 atomic essay (1,200 words) on a product or growth topic, using insights from Lenny's podcast.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "topic": {"type": "string", "description": "The essay topic"},
-                "grounding": {"type": "string", "description": "Key insights from transcripts to use"},
+                "topic": {
+                    "type": "string",
+                    "description": "The topic for the essay",
+                },
             },
-            "required": ["topic", "grounding"],
+            "required": ["topic"],
         },
     },
     {
         "name": "generate_artifact",
-        "description": (
-            "Generate a Markdown document or complete HTML/CSS artifact "
-            "based on the conversation. Returns structured content for the artifact viewer."
-        ),
+        "description": "Generate a Markdown document or interactive HTML artifact on a given topic.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "artifact_type": {
+                "type": {
                     "type": "string",
                     "enum": ["markdown", "html"],
                     "description": "Type of artifact to generate",
                 },
-                "title": {"type": "string", "description": "Title for the artifact"},
-                "content_brief": {"type": "string", "description": "What the artifact should contain"},
+                "prompt": {
+                    "type": "string",
+                    "description": "Description of what to generate",
+                },
             },
-            "required": ["artifact_type", "title", "content_brief"],
+            "required": ["type", "prompt"],
         },
     },
 ]
 
-# Anthropic-format tools
-ANTHROPIC_TOOLS = TOOLS
+OLLAMA_TOOL_DESCRIPTIONS = """
+AVAILABLE TOOLS (use exactly these formats when you need to call a tool):
 
-# For Ollama (description only, no schema)
-OLLAMA_TOOL_DESCRIPTIONS = [
-    {"name": t["name"], "description": t["description"]} for t in TOOLS
-]
+To search podcast transcripts:
+SEARCH: <your search query here>
+
+To write a Ship 30 essay:
+ESSAY: <topic here>
+
+To generate an artifact:
+ARTIFACT: markdown | <description>
+ARTIFACT: html | <description>
+
+Only use ONE tool per response. After the tool call, wait for the result.
+"""
 
 
-async def dispatch_tool(name: str, inputs: dict, session_messages: list[dict]) -> dict:
-    """Execute a tool call and return result."""
+async def dispatch_tool(name: str, input_data: dict) -> dict | str:
+    """Dispatch a tool call and return the result."""
     if name == "search_transcripts":
-        hits = await search(inputs["query"], n_results=5)
-        if not hits:
-            return {"result": "No relevant transcript content found for this query.", "hits": []}
-        formatted = []
-        for h in hits:
-            formatted.append(
-                f"**{h['episode_title']}** (source: {h['source_file']})\n{h['text'][:600]}..."
-            )
-        return {
-            "result": "\n\n---\n\n".join(formatted),
-            "hits": hits,
-            "sources": [
-                {"title": h["episode_title"], "excerpt": h["text"][:200], "chunk_index": h["chunk_index"]}
-                for h in hits
-            ],
-        }
-
-    elif name == "generate_ship30_essay":
-        from app.skills.ship30 import generate_essay
-        essay = await generate_essay(inputs["topic"], inputs["grounding"])
-        return {"result": essay, "artifact_type": "ship30", "title": f"Ship 30 Essay: {inputs['topic']}"}
-
-    elif name == "generate_artifact":
-        from app.skills.artifact_gen import generate_artifact
-        content = await generate_artifact(
-            inputs["artifact_type"],
-            inputs["title"],
-            inputs["content_brief"],
-            session_messages,
+        return await _search_transcripts(
+            query=input_data.get("query", ""),
+            n_results=input_data.get("n_results", 5),
         )
-        return {
-            "result": content,
-            "artifact_type": inputs["artifact_type"],
-            "title": inputs["title"],
-        }
+    elif name == "generate_ship30_essay":
+        return await _generate_ship30(topic=input_data.get("topic", ""))
+    elif name == "generate_artifact":
+        return await _generate_artifact(
+            artifact_type=input_data.get("type", "markdown"),
+            prompt=input_data.get("prompt", ""),
+        )
+    else:
+        return f"Unknown tool: {name}"
 
-    return {"result": f"Unknown tool: {name}"}
+
+async def _search_transcripts(query: str, n_results: int = 5) -> str:
+    """Search the ChromaDB vector store."""
+    try:
+        retriever = get_retriever()
+        results = await retriever.search(query=query, n_results=n_results)
+        if not results:
+            return "No relevant content found in the podcast transcripts for this query."
+        
+        formatted = f"Found {len(results)} relevant passages:\n\n"
+        for i, r in enumerate(results, 1):
+            episode = r.get("episode_title", "Unknown Episode")
+            source = r.get("source_file", "")
+            text = r.get("text", "")
+            formatted += f"[{i}] **{episode}**\n{text}\n\n"
+        return formatted
+    except Exception as e:
+        return f"Search error: {str(e)}. The vector store may not be initialized yet."
+
+
+async def _generate_ship30(topic: str) -> dict:
+    """Generate a Ship 30 essay and return as artifact."""
+    from app.skills.ship30 import generate_essay
+    try:
+        # Search for context first
+        retriever = get_retriever()
+        context = await retriever.search(query=topic, n_results=5)
+    except Exception:
+        context = []
+    
+    essay = await generate_essay(topic=topic, context_chunks=context)
+    return {
+        "artifact": {
+            "type": "ship30",
+            "title": f"Essay: {topic}",
+            "content": essay,
+        },
+        "summary": f"Generated Ship 30 essay on '{topic}' ({len(essay.split())} words)",
+    }
+
+
+async def _generate_artifact(artifact_type: str, prompt: str) -> dict:
+    """Generate a markdown or HTML artifact."""
+    from app.skills.artifact_gen import generate_artifact
+    try:
+        retriever = get_retriever()
+        context = await retriever.search(query=prompt, n_results=4)
+    except Exception:
+        context = []
+    
+    content = await generate_artifact(
+        artifact_type=artifact_type,
+        prompt=prompt,
+        context_chunks=context,
+    )
+    return {
+        "artifact": {
+            "type": artifact_type,
+            "title": prompt[:80],
+            "content": content,
+        },
+        "summary": f"Generated {artifact_type} artifact: {prompt[:60]}",
+    }

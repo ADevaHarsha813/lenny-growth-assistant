@@ -107,7 +107,7 @@ class LLMProvider:
 
         return {"content": content, "tool_use": tool_use, "stop_reason": "end_turn"}
 
-    async def stream_chat(self, messages: list[dict], system: str = "", max_tokens: int = 2048):
+    async def stream_chat(self, messages: list[dict], system: str = "", max_tokens: int = 2048, tools=None):
         """Async generator that yields text tokens."""
         if self.provider == "anthropic":
             async with self._client.messages.stream(

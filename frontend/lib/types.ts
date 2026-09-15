@@ -4,9 +4,10 @@ export type MessageRole = "user" | "assistant";
 export type Skill = "ship30" | "artifact_markdown" | "artifact_html";
 
 export interface Source {
-  title: string;
-  excerpt: string;
-  chunk_index?: number;
+  episode_title: string;
+  source_file: string;
+  chunk_index: number;
+  distance?: number;
 }
 
 export interface Message {
@@ -20,28 +21,27 @@ export interface Message {
 
 export interface Session {
   id: string;
-  title?: string;
+  title: string;
   created_at: string;
   updated_at: string;
   llm_provider: LLMProvider;
-  llm_model?: string;
-  message_count: number;
+  llm_model: string;
 }
 
 export interface Artifact {
   id: string;
   session_id: string;
   artifact_type: ArtifactType;
-  title?: string;
+  title: string;
   content: string;
   created_at: string;
-  sources?: Source[];
 }
 
 export interface ChatStreamEvent {
-  type: "token" | "sources" | "artifact" | "done" | "error";
-  content?: string;
-  sources?: Source[];
+  type: "text" | "tool_start" | "tool_end" | "artifact" | "error" | "done";
+  delta?: string;
+  tool?: string;
+  input?: Record<string, unknown>;
   artifact?: Artifact;
-  error?: string;
+  message?: string;
 }
