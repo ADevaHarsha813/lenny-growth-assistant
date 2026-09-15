@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Message, Artifact, Session, Skill } from "@/lib/types";
 import { api } from "@/lib/api";
 
@@ -11,12 +11,32 @@ export function useChat(session: Session | null, onArtifact: (a: Artifact) => vo
   const [error, setError] = useState<string | null>(null);
   const isStreamingRef = useRef(false);
   const abortRef = useRef<(() => void) | null>(null);
+  // Track which session the current stream belongs to
+  const activeSessionIdRef = useRef<string | null>(null);
+
+  // When session changes: abort any in-flight stream and clear state immediately
+  useEffect(() => {
+    if (activeSessionIdRef.current !== (session?.id ?? null)) {
+      // Cancel the old stream reader
+      abortRef.current?.();
+      abortRef.current = null;
+      isStreamingRef.current = false;
+      setIsStreaming(false);
+      setStreamingText("");
+      setError(null);
+      setMessages([]);
+      activeSessionIdRef.current = session?.id ?? null;
+    }
+  }, [session?.id]);
 
   const loadMessages = useCallback(async (sessionId: string) => {
     try {
       setError(null);
       const msgs = await api.getMessages(sessionId);
-      setMessages(msgs);
+      // Guard: only apply if session hasn't changed while we were fetching
+      if (activeSessionIdRef.current === sessionId) {
+        setMessages(msgs);
+      }
     } catch (e) {
       console.error("Failed to load messages", e);
     }
@@ -27,12 +47,13 @@ export function useChat(session: Session | null, onArtifact: (a: Artifact) => vo
       const activeSession = overrideSession || session;
       if (!activeSession || isStreamingRef.current) return;
 
+      const sessionId = activeSession.id;
       setError(null);
       const isFirstMessage = messages.length === 0;
 
       const userMsg: Message = {
         id: Date.now().toString(),
-        session_id: activeSession.id,
+        session_id: sessionId,
         role: "user",
         content,
         created_at: new Date().toISOString(),
@@ -41,9 +62,10 @@ export function useChat(session: Session | null, onArtifact: (a: Artifact) => vo
       isStreamingRef.current = true;
       setIsStreaming(true);
       setStreamingText("");
+      activeSessionIdRef.current = sessionId;
 
       try {
-        const response = await api.streamChat(activeSession.id, { message: content, skill });
+        const response = await api.streamChat(sessionId, { message: content, skill });
         if (!response.ok) {
           const errData = await response.json().catch(() => ({}));
           throw new Error(errData.detail || errData.error || `HTTP ${response.status}`);
@@ -58,6 +80,9 @@ export function useChat(session: Session | null, onArtifact: (a: Artifact) => vo
         abortRef.current = () => reader.cancel();
 
         while (true) {
+          // Guard: if session has changed, abandon this stream
+          if (activeSessionIdRef.current !== sessionId) break;
+
           const { done, value } = await reader.read();
           if (done) break;
 
@@ -73,11 +98,13 @@ export function useChat(session: Session | null, onArtifact: (a: Artifact) => vo
               const payload = JSON.parse(raw);
               if (payload.type === "text") {
                 assistantText += payload.delta;
-                setStreamingText(assistantText);
+                if (activeSessionIdRef.current === sessionId) {
+                  setStreamingText(assistantText);
+                }
               } else if (payload.type === "artifact") {
                 const art: Artifact = {
                   id: Date.now().toString(),
-                  session_id: activeSession.id,
+                  session_id: sessionId,
                   artifact_type: payload.artifact.type,
                   title: payload.artifact.title,
                   content: payload.artifact.content,
@@ -93,38 +120,44 @@ export function useChat(session: Session | null, onArtifact: (a: Artifact) => vo
           }
         }
 
-        if (assistantText) {
+        // Only commit the final message if we're still on the same session
+        if (assistantText && activeSessionIdRef.current === sessionId) {
           const assistantMsg: Message = {
             id: (Date.now() + 1).toString(),
-            session_id: activeSession.id,
+            session_id: sessionId,
             role: "assistant",
             content: assistantText,
             created_at: new Date().toISOString(),
           };
           setMessages((prev) => [...prev, assistantMsg]);
 
-          // Trigger title refresh after first exchange
           if (isFirstMessage && onTitleUpdate) {
             setTimeout(async () => {
               try {
-                const updated = await api.getSession(activeSession.id);
+                const updated = await api.getSession(sessionId);
                 if (updated.title && updated.title !== "New conversation") {
-                  onTitleUpdate(activeSession.id, updated.title);
+                  onTitleUpdate(sessionId, updated.title);
                 }
               } catch {}
             }, 500);
           }
-        } else if (!assistantText) {
+        } else if (!assistantText && activeSessionIdRef.current === sessionId) {
           setError("No response received. Please try again.");
         }
       } catch (e: any) {
-        console.error("Stream error", e);
-        setError(e.message || "Something went wrong. Please try again.");
+        if (activeSessionIdRef.current === sessionId) {
+          console.error("Stream error", e);
+          setError(e.message || "Something went wrong. Please try again.");
+        }
       } finally {
-        isStreamingRef.current = false;
-        setIsStreaming(false);
-        setStreamingText("");
-        abortRef.current = null;
+        if (activeSessionIdRef.current === sessionId) {
+          isStreamingRef.current = false;
+          setIsStreaming(false);
+          setStreamingText("");
+          abortRef.current = null;
+        } else {
+          isStreamingRef.current = false;
+        }
       }
     },
     [session, onArtifact, onTitleUpdate, messages.length]
