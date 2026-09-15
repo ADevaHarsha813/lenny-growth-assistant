@@ -50,10 +50,14 @@ Return well-structured Markdown with clear headings, examples, and actionable ta
         max_tokens=max_tokens,
         tools=None,
     )
+    # provider.chat() returns {"content": str, "tool_use": ..., "stop_reason": ...}
+    if isinstance(response, dict):
+        return response.get("content") or ""
+    # fallback for any legacy format
     if isinstance(response, list):
         for block in response:
-            if hasattr(block, 'text'):
+            if hasattr(block, "text"):
                 return block.text
-            elif isinstance(block, dict) and block.get('type') == 'text':
-                return block['text']
+            if isinstance(block, dict) and block.get("type") == "text":
+                return block["text"]
     return str(response)
