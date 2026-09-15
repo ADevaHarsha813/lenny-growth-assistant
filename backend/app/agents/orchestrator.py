@@ -126,7 +126,8 @@ async def run_agent(
                 break
 
         else:
-            # Ollama path — simpler, no native tool use
+            # Ollama path — collect first pass silently to detect tool calls
+            # (avoids streaming raw "SEARCH: ..." tool-call syntax to the user)
             ollama_system = system + f"\n\n{OLLAMA_TOOL_DESCRIPTIONS}"
             response_text = ""
             async for chunk in provider.stream_chat(
@@ -134,11 +135,9 @@ async def run_agent(
                 system=ollama_system,
                 max_tokens=4096,
             ):
-                # stream_chat yields raw string tokens for Ollama
                 delta = chunk if isinstance(chunk, str) else chunk.get("delta", "")
                 if delta:
                     response_text += delta
-                    yield f"data: {json.dumps({'type': 'text', 'delta': delta})}\n\n"
 
             loop_messages.append({"role": "assistant", "content": response_text})
 
@@ -151,7 +150,6 @@ async def run_agent(
 
                 if isinstance(result, dict) and result.get("artifact"):
                     yield f"data: {json.dumps({'type': 'artifact', 'artifact': result['artifact']})}\n\n"
-                    # Final synthesis
                     loop_messages.append({
                         "role": "user",
                         "content": f"Tool result: {result.get('summary', 'Done')}. Now give a brief, natural response to the user."
@@ -161,7 +159,7 @@ async def run_agent(
                         "role": "user",
                         "content": f"Tool result:\n{str(result)[:3000]}\n\nNow synthesize this into a helpful, direct answer."
                     })
-                # One more pass
+                # Stream only the final synthesis — this is what the user sees
                 async for chunk in provider.stream_chat(
                     messages=loop_messages,
                     system=system,
@@ -170,6 +168,9 @@ async def run_agent(
                     delta = chunk if isinstance(chunk, str) else chunk.get("delta", "")
                     if delta:
                         yield f"data: {json.dumps({'type': 'text', 'delta': delta})}\n\n"
+            else:
+                # No tool call — stream the already-collected response
+                yield f"data: {json.dumps({'type': 'text', 'delta': response_text})}\n\n"
             break
 
     yield f"data: {json.dumps({'type': 'done'})}\n\n"
